@@ -71,17 +71,15 @@ for k=1:mod_size
         end % predictAndUpdateState函数是一次预测一个值并更新网络状态。
 
 % 反归一化
-        pre_value=mapminmax('reverse',YPred,mappingy);
-        pre_result=[pre_result;pre_value];
-        pre_result=double(pre_result); 
+        pre_value=double([pre_value;mapminmax('reverse',YPred,mappingy)]);
 
     end
 
     if(imf_size==1) % 判断第k个MODWT分量emd分解得到的imf个数是否为1。
-        h=[h;pre_result]; % 如果为1，则直接拼接。
+        h=[h;pre_value]; % 如果为1，则直接拼接。
     else
-        pre_result=sum(pre_result); % 如果不为1，则进行sum后再拼接。
-        h=[h;pre_result]; % 拼接得到的矩阵对应预测值的MODWT分解矩阵。
+        pre_result=sum(pre_value); % 如果不为1，则进行sum后再拼接。
+        h=[h;pre_value]; % 拼接得到的矩阵对应预测值的MODWT分解矩阵。
     end
   
 end
