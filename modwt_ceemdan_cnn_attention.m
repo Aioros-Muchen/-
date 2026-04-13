@@ -20,55 +20,61 @@ data = [data1; data2]; % 矩阵拼接。
 numFeatures = 1; % 特征的维数为XTrain的维数
 numResponses = 1; % 输出是一维
 numHiddenUnits = 200; % 创建LSTM回归网络，指定LSTM层的隐含单元个数200
+
 % gru初始化
 grulayers = [ ...
     sequenceInputLayer(numFeatures) % 输入层
     gruLayer(numHiddenUnits, "OutputMode", "sequence") % GRU层
     fullyConnectedLayer(numResponses) % 全连接层，是输出的维数
     regressionLayer]; % 其计算回归问题的半均方误差模块 。即说明这不是在进行分类问题
+
 % cnn初始化
-cnnlayers = layerGraph();                                                 % 建立空白网络结构
+cnnlayers = layerGraph();
+% 输入与序列折叠
+cnnlayers = addLayers(cnnlayers, [
+    sequenceInputLayer([3, 1, 1], "Name", "sequence")
+    sequenceFoldingLayer("Name", "seqfold")
+]);
+% 卷积块1: 卷积 + 激活 + 池化
+cnnlayers = addLayers(cnnlayers, [
+    convolution2dLayer([2, 1], 32, "Name", "conv1")
+    reluLayer("Name", "relu1")
+    % maxPooling2dLayer([2, 2], "Stride", [2, 2], "Name", "pool1")
+]);
+% 卷积块2: 卷积 + 激活 + 池化
+cnnlayers = addLayers(cnnlayers, [
+    convolution2dLayer([2, 1], 64, "Name", "conv2")
+    reluLayer("Name", "relu2")
+    % maxPooling2dLayer([1, 1], "Stride", [1, 1], "Name", "pool2")
+]);
+% SE注意力机制
+cnnlayers = addLayers(cnnlayers, [
+    globalAveragePooling2dLayer("Name", "gapool")
+    fullyConnectedLayer(16, "Name", "fc_se1")
+    reluLayer("Name", "relu_se")
+    fullyConnectedLayer(64, "Name", "fc_se2")
+    sigmoidLayer("Name", "sigmoid")
+]);
+% 注意力加权
+cnnlayers = addLayers(cnnlayers, multiplicationLayer(2, "Name", "attention"));
+% 输出层
+cnnlayers = addLayers(cnnlayers, [
+    sequenceUnfoldingLayer("Name", "sequnfold")
+    flattenLayer("Name", "flatten")
+    fullyConnectedLayer(1, "Name", "fc_out")
+    regressionLayer("Name", "output")
+]);
 
-tempLayers = [
-    sequenceInputLayer([3, 1, 1], "Name", "sequence")            % 建立输入层，输入数据结构为[num_dim, 1, 1]
-    sequenceFoldingLayer("Name", "seqfold")];                          % 建立序列折叠层
-cnnlayers = addLayers(cnnlayers, tempLayers);                                % 将上述网络结构加入空白结构中
-
-tempLayers = convolution2dLayer([2, 1], 32, "Name", "conv_1");         % 卷积层 卷积核[3, 1] 步长[1, 1] 通道数 32
-cnnlayers = addLayers(cnnlayers,tempLayers);                                 % 将上述网络结构加入空白结构中
-
-tempLayers = [
-    reluLayer("Name", "relu_1")                                        % 激活层
-    convolution2dLayer([2, 1], 64, "Name", "conv_2")                   % 卷积层 卷积核[3, 1] 步长[1, 1] 通道数 64
-    reluLayer("Name", "relu_2")];                                      % 激活层
-cnnlayers = addLayers(cnnlayers, tempLayers);                                % 将上述网络结构加入空白结构中
-
-tempLayers = [
-    globalAveragePooling2dLayer("Name", "gapool")                      % 全局平均池化层
-    fullyConnectedLayer(16, "Name", "fc_2")                            % SE注意力机制，通道数的1 / 4
-    reluLayer("Name", "relu_3")                                        % 激活层
-    fullyConnectedLayer(64, "Name", "fc_3")                            % SE注意力机制，数目和通道数相同
-    sigmoidLayer("Name", "sigmoid")];                                  % 激活层
-cnnlayers = addLayers(cnnlayers, tempLayers);                                % 将上述网络结构加入空白结构中
-
-tempLayers = multiplicationLayer(2, "Name", "multiplication");         % 点乘的注意力
-cnnlayers = addLayers(cnnlayers, tempLayers);                                % 将上述网络结构加入空白结构中
-
-tempLayers = [
-    sequenceUnfoldingLayer("Name", "sequnfold")                        % 建立序列反折叠层
-    flattenLayer("Name", "flatten")                                    % 网络铺平层
-    fullyConnectedLayer(1)                                     % 全连接层
-    regressionLayer]; % 其计算回归问题的半均方误差模块 。即说明这不是在进行分类问题。
-cnnlayers = addLayers(cnnlayers, tempLayers);                                % 将上述网络结构加入空白结构中
-
-cnnlayers = connectLayers(cnnlayers, "seqfold/out", "conv_1");               % 折叠层输出 连接 卷积层输入;
+% 连接网络
+cnnlayers = connectLayers(cnnlayers, "seqfold/out", "conv1");
+cnnlayers = connectLayers(cnnlayers, "conv1", "gapool");
+% cnnlayers = connectLayers(cnnlayers, "pool1", "conv2");
+% cnnlayers = connectLayers(cnnlayers, "pool2", "attention/in1");
+cnnlayers = connectLayers(cnnlayers, "relu1", "conv2");
+cnnlayers = connectLayers(cnnlayers, "relu2", "attention/in1");
+cnnlayers = connectLayers(cnnlayers, "sigmoid", "attention/in2");
+cnnlayers = connectLayers(cnnlayers, "attention", "sequnfold/in");
 cnnlayers = connectLayers(cnnlayers, "seqfold/miniBatchSize", "sequnfold/miniBatchSize");
-% 折叠层输出 连接 反折叠层输入
-cnnlayers = connectLayers(cnnlayers, "conv_1", "relu_1");                    % 卷积层输出 链接 激活层
-cnnlayers = connectLayers(cnnlayers, "conv_1", "gapool");                    % 卷积层输出 链接 全局平均池化
-cnnlayers = connectLayers(cnnlayers, "relu_2", "multiplication/in2");        % 激活层输出 链接 相乘层
-cnnlayers = connectLayers(cnnlayers, "sigmoid", "multiplication/in1");       % 全连接输出 链接 相乘层
-cnnlayers = connectLayers(cnnlayers, "multiplication", "sequnfold/in");      % 点乘输出
 
 %%  参数设置
 options = trainingOptions('adam', ... % 指定训练选项，求解器设置为adam， 200轮训练
