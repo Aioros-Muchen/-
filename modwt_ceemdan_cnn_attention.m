@@ -338,3 +338,5 @@ ylabel('发电量(kW)')
 grid on
 title('MODWT-CEEMDAN-GRU-CNN-Attention')
 
+toc
+disp(['运行时间: ',num2str(toc)]);
